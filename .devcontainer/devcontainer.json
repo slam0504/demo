@@ -1,0 +1,11 @@
+{
+    "name": "card-service",
+    "image": "mcr.microsoft.com/devcontainers/go:1.21",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "workspaceFolder": "/workspace",
+    "forwardPorts": [8080],
+    "settings": {"terminal.integrated.shell.linux": "/bin/bash"}
+}
