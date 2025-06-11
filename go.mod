@@ -5,7 +5,10 @@ go 1.23.8
 require (
 	github.com/ThreeDotsLabs/watermill v1.4.6
 	github.com/ThreeDotsLabs/watermill-kafka/v2 v2.5.0
-	github.com/go-chi/chi/v5 v5.2.1
+github.com/gin-gonic/gin v1.10.0
+go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.61.0
+gorm.io/driver/mysql v1.5.1
+gorm.io/gorm v1.25.7
 	github.com/google/uuid v1.6.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0
 	go.opentelemetry.io/otel v1.36.0

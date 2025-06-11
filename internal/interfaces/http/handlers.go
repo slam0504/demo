@@ -1,39 +1,40 @@
 package http
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 
 	appcmd "demo/internal/application/command"
 	appquery "demo/internal/application/query"
-	"github.com/go-chi/chi/v5"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
-// Router sets up HTTP routes.
+// Router sets up HTTP routes using Gin.
 func Router(createHandler *appcmd.CreateCardHandler, updateHandler *appcmd.UpdateCardHandler, searchHandler *appquery.SearchCardsHandler) http.Handler {
-	r := chi.NewRouter()
-	r.Method("POST", "/cards", otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		var cmd appcmd.CreateCardCommand
-		if err := json.NewDecoder(req.Body).Decode(&cmd); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		card, err := createHandler.Handle(req.Context(), cmd)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(card)
-	}), "create_card"))
+	r := gin.New()
+	r.Use(otelgin.Middleware("card_service"))
 
-	r.Method("PUT", "/cards/{id}", otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		idStr := chi.URLParam(req, "id")
+	r.POST("/cards", func(c *gin.Context) {
+		var cmd appcmd.CreateCardCommand
+		if err := c.ShouldBindJSON(&cmd); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		card, err := createHandler.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, card)
+	})
+
+	r.PUT("/cards/:id", func(c *gin.Context) {
+		idStr := c.Param("id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
-			http.Error(w, "invalid id", http.StatusBadRequest)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 			return
 		}
 		var body struct {
@@ -44,8 +45,8 @@ func Router(createHandler *appcmd.CreateCardHandler, updateHandler *appcmd.Updat
 			SubCategory string
 			Description string
 		}
-		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		cmd := appcmd.UpdateCardCommand{
@@ -57,34 +58,31 @@ func Router(createHandler *appcmd.CreateCardHandler, updateHandler *appcmd.Updat
 			SubCategory: body.SubCategory,
 			Description: body.Description,
 		}
-		card, err := updateHandler.Handle(req.Context(), cmd)
+		card, err := updateHandler.Handle(c.Request.Context(), cmd)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(card)
-	}), "update_card"))
+		c.JSON(http.StatusOK, card)
+	})
 
-	r.Method("GET", "/cards", otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	r.GET("/cards", func(c *gin.Context) {
 		q := appquery.SearchCardsQuery{
-			Name:     req.URL.Query().Get("name"),
-			Faction:  req.URL.Query().Get("faction"),
-			Category: req.URL.Query().Get("category"),
-			Sub:      req.URL.Query().Get("sub"),
+			Name:     c.Query("name"),
+			Faction:  c.Query("faction"),
+			Category: c.Query("category"),
+			Sub:      c.Query("sub"),
 		}
-		if cost := req.URL.Query().Get("cost"); cost != "" {
-			if _, err := fmt.Sscanf(cost, "%d", &q.Cost); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
+		if cost := c.Query("cost"); cost != "" {
+			_, _ = fmt.Sscanf(cost, "%d", &q.Cost)
 		}
-		cards, err := searchHandler.Handle(req.Context(), q)
+		cards, err := searchHandler.Handle(c.Request.Context(), q)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(cards)
-	}), "search_cards"))
+		c.JSON(http.StatusOK, cards)
+	})
 
 	return r
 }
