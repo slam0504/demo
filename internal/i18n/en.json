@@ -1,0 +1,12 @@
+{
+    "invalid_id": "invalid id",
+    "invalid_body": "invalid request body",
+    "internal_error": "internal server error",
+    "id": "id",
+    "name": "name",
+    "cost": "cost",
+    "faction": "faction",
+    "category": "category",
+    "subcategory": "sub category",
+    "description": "description"
+}
