@@ -7,6 +7,7 @@ import (
 
 	appcmd "demo/internal/application/command"
 	appquery "demo/internal/application/query"
+	"demo/internal/infrastructure/cache"
 	"demo/internal/infrastructure/eventstore"
 	"demo/internal/infrastructure/messaging"
 	httpiface "demo/internal/interfaces/http"
@@ -33,10 +34,12 @@ func main() {
 	shutdown := initTracer()
 	defer func() { _ = shutdown(context.Background()) }()
 
-	repo, err := eventstore.NewMySQLStore("root@tcp(127.0.0.1:3306)/card_service?parseTime=true")
+	es, err := eventstore.NewMySQLStore("root@tcp(127.0.0.1:3306)/card_service?parseTime=true")
 	if err != nil {
 		log.Fatal(err)
 	}
+	// wrap repository with redis cache
+	repo := cache.NewRedisRepository(es, "localhost:6379")
 	publisher, err := messaging.NewPublisher([]string{"localhost:9092"})
 	if err != nil {
 		log.Println("failed to create publisher", err)
