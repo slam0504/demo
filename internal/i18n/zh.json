@@ -1,0 +1,12 @@
+{
+    "invalid_id": "無效的ID",
+    "invalid_body": "無效的請求內容",
+    "internal_error": "內部伺服器錯誤",
+    "id": "編號",
+    "name": "名稱",
+    "cost": "費用",
+    "faction": "陣營",
+    "category": "類別",
+    "subcategory": "子類別",
+    "description": "描述"
+}
