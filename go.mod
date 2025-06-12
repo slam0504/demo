@@ -16,8 +16,11 @@ require (
 	gorm.io/gorm v1.25.7
 )
 
+require github.com/yuin/gopher-lua v1.1.1 // indirect
+
 require (
 	github.com/Shopify/sarama v1.38.0 // indirect
+	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
