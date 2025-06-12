@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,8 @@ import (
 	appcmd "demo/internal/application/command"
 	appquery "demo/internal/application/query"
 	"demo/internal/domain/card"
+	"demo/internal/infrastructure/auth"
+	"demo/internal/infrastructure/deckstore"
 )
 
 type mockRepo struct {
@@ -40,7 +43,9 @@ func (m *mockRepo) Search(ctx context.Context, name string, cost int, faction, c
 
 func TestPostInvalidBody(t *testing.T) {
 	repo := &mockRepo{}
-	r := Router(&appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo})
+	authSvc := auth.NewService()
+	deckRepo := deckstore.NewInMemoryStore()
+	r := Router(authSvc, &appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo}, &appcmd.CreateDeckHandler{Repo: deckRepo})
 	req := httptest.NewRequest("POST", "/cards", bytes.NewBufferString("{"))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -51,7 +56,9 @@ func TestPostInvalidBody(t *testing.T) {
 
 func TestPostRepoError(t *testing.T) {
 	repo := &mockRepo{SaveFn: func(ctx context.Context, evts []interface{}) error { return errors.New("fail") }}
-	r := Router(&appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo})
+	authSvc := auth.NewService()
+	deckRepo := deckstore.NewInMemoryStore()
+	r := Router(authSvc, &appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo}, &appcmd.CreateDeckHandler{Repo: deckRepo})
 	body := `{"name":"n"}`
 	req := httptest.NewRequest("POST", "/cards", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
@@ -63,7 +70,9 @@ func TestPostRepoError(t *testing.T) {
 
 func TestPutInvalidID(t *testing.T) {
 	repo := &mockRepo{}
-	r := Router(&appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo})
+	authSvc := auth.NewService()
+	deckRepo := deckstore.NewInMemoryStore()
+	r := Router(authSvc, &appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo}, &appcmd.CreateDeckHandler{Repo: deckRepo})
 	req := httptest.NewRequest("PUT", "/cards/bad", bytes.NewBufferString("{}"))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -76,7 +85,9 @@ func TestGetRepoError(t *testing.T) {
 	repo := &mockRepo{SearchFn: func(ctx context.Context, name string, cost int, f, c, s string) ([]*card.Card, error) {
 		return nil, errors.New("fail")
 	}}
-	r := Router(&appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo})
+	authSvc := auth.NewService()
+	deckRepo := deckstore.NewInMemoryStore()
+	r := Router(authSvc, &appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo}, &appcmd.CreateDeckHandler{Repo: deckRepo})
 	req := httptest.NewRequest("GET", "/cards", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -89,11 +100,42 @@ func TestGetSuccess(t *testing.T) {
 	repo := &mockRepo{SearchFn: func(ctx context.Context, name string, cost int, f, c, s string) ([]*card.Card, error) {
 		return []*card.Card{{Name: "N"}}, nil
 	}}
-	r := Router(&appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo})
+	authSvc := auth.NewService()
+	deckRepo := deckstore.NewInMemoryStore()
+	r := Router(authSvc, &appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo}, &appcmd.CreateDeckHandler{Repo: deckRepo})
 	req := httptest.NewRequest("GET", "/cards", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 got %d", w.Code)
+	}
+}
+
+func TestLoginAndCreateDeck(t *testing.T) {
+	repo := &mockRepo{}
+	authSvc := auth.NewService()
+	deckRepo := deckstore.NewInMemoryStore()
+	r := Router(authSvc, &appcmd.CreateCardHandler{Repo: repo}, &appcmd.UpdateCardHandler{Repo: repo}, &appquery.SearchCardsHandler{Repo: repo}, &appcmd.CreateDeckHandler{Repo: deckRepo})
+
+	loginReq := httptest.NewRequest("POST", "/login", bytes.NewBufferString(`{"username":"user","password":"password"}`))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, loginReq)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", w.Code)
+	}
+	token := w.Body.String()
+	// token value like {"token":"..."}
+	var resp struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	deckBody := `{"name":"d","cardIDs":[]}`
+	req := httptest.NewRequest("POST", "/decks", bytes.NewBufferString(deckBody))
+	req.Header.Set("Authorization", "Bearer "+resp.Token)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", w2.Code)
 	}
 }
