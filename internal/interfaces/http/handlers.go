@@ -7,15 +7,32 @@ import (
 	appcmd "demo/internal/application/command"
 	appquery "demo/internal/application/query"
 	"demo/internal/i18n"
+	"demo/internal/infrastructure/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 // Router sets up HTTP routes using Gin.
-func Router(createHandler *appcmd.CreateCardHandler, updateHandler *appcmd.UpdateCardHandler, searchHandler *appquery.SearchCardsHandler) http.Handler {
+func Router(authSvc *auth.Service, createHandler *appcmd.CreateCardHandler, updateHandler *appcmd.UpdateCardHandler, searchHandler *appquery.SearchCardsHandler, deckHandler *appcmd.CreateDeckHandler) http.Handler {
 	r := gin.New()
 	r.Use(otelgin.Middleware("card_service"))
+
+	r.POST("/login", func(c *gin.Context) {
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+			return
+		}
+		if token, ok := authSvc.Login(body.Username, body.Password); ok {
+			c.JSON(http.StatusOK, gin.H{"token": token})
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		}
+	})
 
 	r.POST("/cards", func(c *gin.Context) {
 		lang := c.GetHeader("Accept-Language")
@@ -86,6 +103,41 @@ func Router(createHandler *appcmd.CreateCardHandler, updateHandler *appcmd.Updat
 			return
 		}
 		c.JSON(http.StatusOK, i18n.TranslateCards(lang, cards))
+	})
+
+	r.POST("/decks", func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		var token string
+		fmt.Sscanf(authHeader, "Bearer %s", &token)
+		userID, ok := authSvc.Authenticate(token)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		var body struct {
+			Name    string
+			CardIDs []string
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+			return
+		}
+		var ids []uuid.UUID
+		for _, s := range body.CardIDs {
+			id, err := uuid.Parse(s)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid card id"})
+				return
+			}
+			ids = append(ids, id)
+		}
+		cmd := appcmd.CreateDeckCommand{UserID: userID, Name: body.Name, CardIDs: ids}
+		d, err := deckHandler.Handle(c.Request.Context(), cmd)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"id": d.ID.String()})
 	})
 
 	return r
